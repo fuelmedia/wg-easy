@@ -1,45 +1,55 @@
-volumes:
-  etc_wireguard:
+networks:
+  public:
+    external: true
 
 services:
   wg-easy:
-    environment:
-      # Change Language:
-      # (Supports: en, ua, ru, tr, no, pl, fr, de, ca, es, ko, vi, nl, is, pt, chs, cht, it, th, hi)
-      - LANG=en
-      # ⚠️ Required:
-      # Change this to your host's public address
-      - WG_HOST=69.62.71.252
-
-      # Optional:
-      # - PASSWORD_HASH=$$2y$$10$$hBCoykrB95WSzuV4fafBzOHWKu9sbyVa34GJr8VV5R/pIelfEMYyG # (needs double $$, hash of 'foobar123'; see "How_to_generate_an_bcrypt_hash.md" for generate the hash)
-      # - PORT=51821
-      # - WG_PORT=51820
-      # - WG_CONFIG_PORT=92820
-      # - WG_DEFAULT_ADDRESS=10.8.0.x
-      # - WG_DEFAULT_DNS=1.1.1.1
-      # - WG_MTU=1420
-      # - WG_ALLOWED_IPS=192.168.15.0/24, 10.0.1.0/24
-      # - WG_PERSISTENT_KEEPALIVE=25
-      # - WG_PRE_UP=echo "Pre Up" > /etc/wireguard/pre-up.txt
-      # - WG_POST_UP=echo "Post Up" > /etc/wireguard/post-up.txt
-      # - WG_PRE_DOWN=echo "Pre Down" > /etc/wireguard/pre-down.txt
-      # - WG_POST_DOWN=echo "Post Down" > /etc/wireguard/post-down.txt
-      - UI_TRAFFIC_STATS=true
-      - UI_CHART_TYPE=1 # (0 Charts disabled, 1 # Line chart, 2 # Area chart, 3 # Bar chart)
-
-    image: weejewel/wg-easy
     container_name: wg-easy
-    volumes:
-      - etc_wireguard:/etc/wireguard
-    ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
+    hostname: wg-easy
+    image: ghcr.io/wg-easy/wg-easy:latest
+    security_opt: [no-new-privileges]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-file: 1
+        max-size: 10m
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-      # - NET_RAW # ⚠️ Uncomment if using Podman
     sysctls:
       - net.ipv4.ip_forward=1
       - net.ipv4.conf.all.src_valid_mark=1
+    healthcheck:
+      test: /usr/bin/timeout 5s /bin/sh -c "/usr/bin/wg show | /bin/grep -q interface || exit 1"
+      interval: 1m
+      timeout: 5s
+      retries: 3
+    networks:
+      - public
+    volumes:
+      - "/mnt/data/wg-easy:/etc/wireguard:rw"
+    environment:
+      UI_TRAFFIC_STATS: true
+      LANG: "en"
+      PASSWORD: "Sup3rStr0ngPassw0rd!"
+      WG_HOST: "example.tld"
+      WG_PRE_UP: 'iptables -t nat -F; iptables -F;'  # Flush all rules
+      WG_DEFAULT_ADDRESS: "10.0.0.x"
+      WG_DEFAULT_DNS: "192.168.1.200,1.1.1.1,8.8.8.8"
+      WG_ALLOWED_IPS: |  # DNS servers should be allowed. You can use "0.0.0.0/0,::/0" instead
+        1.1.1.1,8.8.8.8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+    labels:
+      # If not using Traefik, just expose the 51820/udp and 51821/tcp ports
+      traefik.enable: true
+      # Traefik router for Web UI (middleware used for subpath installation)
+      traefik.http.routers.wg-easy.rule: Host(`example.tld`) && PathPrefix(`/vpn/`)
+      traefik.http.routers.wg-easy.entrypoints: https  # address: ':443/udp'
+      traefik.http.routers.wg-easy.service: wg-easy
+      traefik.http.routers.wg-easy.middlewares: wg-easy@docker
+      traefik.http.services.wg-easy.loadbalancer.server.port: 51821
+      traefik.http.middlewares.wg-easy.stripprefix.prefixes: "/vpn"
+      # Traefik router for WireGuard VPN
+      traefik.udp.routers.wg-easy.entrypoints: wireguard  # address: ':51820/udp'
+      traefik.udp.routers.wg-easy.service: wg-easy
+      traefik.udp.services.wg-easy.loadbalancer.server.port: 51820

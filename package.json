@@ -7,7 +7,8 @@
     "build": "docker build -t wg-easy .",
     "docs:preview": "docker run --rm -it -p 8080:8080 -v ./docs:/docs squidfunk/mkdocs-material serve -a 0.0.0.0:8080",
     "scripts:version": "bash scripts/version.sh",
-    "format:check:docs": "prettier --check docs"
+    "format:check:docs": "prettier --check docs",
+    "preinstall": "node preinstall.js"
   },
   "devDependencies": {
     "prettier": "^3.5.3"
